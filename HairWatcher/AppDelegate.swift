@@ -59,10 +59,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.appState.detectorState = state
         }
 
-        detector.onTouchEvent = { [weak self] in
+        detector.onHairTouchEvent = { [weak self] in
             guard let self else { return }
             OverlayAlertManager.shared.show(message: "Stop touching your hair!")
-            self.notifications.recordTouchEvent(cooldownSeconds: self.settings.cooldownSeconds)
+            self.notifications.recordTouch(kind: .hair, cooldownSeconds: self.settings.cooldownSeconds)
+        }
+
+        detector.onFaceTouchEvent = { [weak self] in
+            guard let self else { return }
+            OverlayAlertManager.shared.show(message: "Stop touching your face!")
+            self.notifications.recordTouch(kind: .face, cooldownSeconds: self.settings.cooldownSeconds)
         }
 
         detector.onDebugFrame = { [weak self] frame in
@@ -81,13 +87,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] value in self?.detector.sensitivity = value }
             .store(in: &cancellables)
 
+        settings.$watchTarget
+            .removeDuplicates()
+            .sink { [weak self] target in
+                guard let self else { return }
+                self.detector.watchTarget = target
+                self.detector.reset(to: self.settings.enabled ? .idle : .disabled)
+            }
+            .store(in: &cancellables)
+
         settings.$launchAtLogin
             .removeDuplicates()
             .sink { [weak self] enabled in self?.applyLaunchAtLogin(enabled) }
             .store(in: &cancellables)
 
-        // Initial sync (in case the bind fires before applyEnabled wants to run).
         detector.sensitivity = settings.sensitivity
+        detector.watchTarget = settings.watchTarget
     }
 
     private func observeSystemEvents() {

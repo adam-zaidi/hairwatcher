@@ -10,7 +10,7 @@ import Foundation
 ///   `CameraManager` and `HairTouchDetector`.
 /// - Raw frames must never be stored in `UserDefaults`, files, logs, or app
 ///   state.
-/// - Touch event timestamps (date/time metadata only, no camera data) may be
+/// - Hair and face touch event timestamps (metadata only, no camera data) may be
 ///   stored in `UserDefaults` via `TouchHistoryStore` for local statistics.
 /// - Raw frames must never be encoded as images/video, copied to pasteboard, or
 ///   sent over the network.

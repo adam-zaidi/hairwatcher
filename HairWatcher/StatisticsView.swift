@@ -1,16 +1,22 @@
 import SwiftUI
 import Charts
 
-/// Statistics tab: daily touch counts with per-day hourly charts and exact times.
 struct StatisticsView: View {
     @ObservedObject private var history = TouchHistoryStore.shared
     @ObservedObject private var notifications = NotificationManager.shared
+    @State private var selectedKind: TouchKind = .hair
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
-                if history.isEmpty {
+                Picker("Kind", selection: $selectedKind) {
+                    Text("Hair").tag(TouchKind.hair)
+                    Text("Face").tag(TouchKind.face)
+                }
+                .pickerStyle(.segmented)
+
+                if history.isEmpty(kind: selectedKind) {
                     emptyState
                 } else {
                     summaryCards
@@ -20,10 +26,8 @@ struct StatisticsView: View {
             }
             .padding(16)
         }
-        .id(history.revision)
+        .id("\(history.revision)-\(selectedKind.rawValue)")
     }
-
-    // MARK: - Header
 
     private var header: some View {
         HStack(spacing: 8) {
@@ -31,15 +35,15 @@ struct StatisticsView: View {
                 .imageScale(.large)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Statistics").font(.headline)
-                Text("Hair touches per day and when they happened.")
+                Text(selectedKind == .hair
+                     ? "Hair touches per day and when they happened."
+                     : "Face touches per day and when they happened.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             Spacer()
         }
     }
-
-    // MARK: - Summary
 
     private var summaryCards: some View {
         HStack(spacing: 12) {
@@ -50,19 +54,21 @@ struct StatisticsView: View {
             )
             summaryCard(
                 title: "Last 7 days",
-                value: "\(history.totalCount(inLastDays: 7))",
+                value: "\(history.totalCount(inLastDays: 7, kind: selectedKind))",
                 subtitle: "catches"
             )
             summaryCard(
                 title: "Last 30 days",
-                value: "\(history.totalCount(inLastDays: 30))",
+                value: "\(history.totalCount(inLastDays: 30, kind: selectedKind))",
                 subtitle: "catches"
             )
         }
     }
 
     private var todayDisplayCount: Int {
-        max(history.count(on: Date()), notifications.todayCount)
+        let stored = history.count(on: Date(), kind: selectedKind)
+        let legacy = selectedKind == .hair ? notifications.todayHairCount : notifications.todayFaceCount
+        return max(stored, legacy)
     }
 
     private func summaryCard(title: String, value: String, subtitle: String) -> some View {
@@ -84,21 +90,17 @@ struct StatisticsView: View {
         )
     }
 
-    // MARK: - Day list
-
     private var dayList: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("By day")
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
 
-            ForEach(history.daySummaries()) { day in
-                DayRow(summary: day)
+            ForEach(history.daySummaries(kind: selectedKind)) { day in
+                DayRow(summary: day, kind: selectedKind)
             }
         }
     }
-
-    // MARK: - Empty / privacy
 
     private var emptyState: some View {
         VStack(spacing: 12) {
@@ -107,7 +109,9 @@ struct StatisticsView: View {
                 .foregroundStyle(.secondary)
             Text("No touches recorded yet")
                 .font(.headline)
-            Text("Stats appear after HairWatcher catches you touching your hair.")
+            Text(selectedKind == .hair
+                 ? "Stats appear after HairWatcher catches you touching your hair."
+                 : "Stats appear after HairWatcher catches you touching your face.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -123,18 +127,17 @@ struct StatisticsView: View {
     }
 }
 
-// MARK: - Day row
-
 private struct DayRow: View {
     let summary: DaySummary
+    let kind: TouchKind
     @ObservedObject private var history = TouchHistoryStore.shared
 
     private var events: [Date] {
-        history.events(on: summary.date)
+        history.events(on: summary.date, kind: kind)
     }
 
     private var hourlyBuckets: [Int] {
-        history.hourlyBuckets(on: summary.date)
+        history.hourlyBuckets(on: summary.date, kind: kind)
     }
 
     var body: some View {

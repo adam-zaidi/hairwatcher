@@ -31,8 +31,10 @@ struct HairWatcherApp: App {
         if !appState.cameraAuthorized { return "exclamationmark.triangle" }
         if !settings.enabled { return "scissors" }
         switch appState.detectorState {
-        case .touching: return "scissors.circle.fill"
-        default: return "scissors"
+        case .touchingHair, .touchingFace, .touchingBoth:
+            return "scissors.circle.fill"
+        default:
+            return "scissors"
         }
     }
 }

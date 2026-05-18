@@ -1,9 +1,6 @@
 import SwiftUI
 import AppKit
 
-/// The dropdown shown when the user clicks the menu-bar icon. We use the
-/// `.menu` MenuBarExtra style so each `Button` becomes a native menu item,
-/// each `Text` an inline label, and each `Divider` a separator.
 struct MenuBarMenuContent: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var appState = AppState.shared
@@ -26,7 +23,12 @@ struct MenuBarMenuContent: View {
 
         Text(statusLine)
 
-        Text("Today: \(notifications.todayCount) catches")
+        if settings.watchTarget.watchesHair {
+            Text("Hair today: \(notifications.todayHairCount) catches")
+        }
+        if settings.watchTarget.watchesFace {
+            Text("Face today: \(notifications.todayFaceCount) catches")
+        }
 
         Divider()
 
@@ -39,16 +41,10 @@ struct MenuBarMenuContent: View {
     private var statusLine: String {
         if !appState.cameraAuthorized { return "Status: camera denied" }
         if !settings.enabled { return "Status: paused" }
-        switch appState.detectorState {
-        case .idle: return "Status: watching"
-        case .touching: return "Status: touching hair!"
-        case .noFace: return "Status: no face in view"
-        case .disabled: return "Status: paused"
-        }
+        let text = DetectorStateDisplay.statusText(for: appState.detectorState, enabled: true)
+        return "Status: \(text.lowercased())"
     }
 
-    /// Bring the existing main window forward if it exists, otherwise ask
-    /// SwiftUI to (re)open the `Window("HairWatcher", id: "main")` scene.
     private func openMainWindow() {
         AppVisibilityController.shared.switchToDockAndActivate()
         if let existing = NSApp.windows.first(where: {

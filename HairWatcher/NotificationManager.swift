@@ -1,32 +1,30 @@
 import Foundation
 import UserNotifications
 
-/// Posts macOS notifications when a hair-touch event is detected, with a
-/// per-event cooldown gate so we never spam the user.
-///
-/// Counts every detected event for the day (independent of cooldown) so the
-/// menu bar can show "today's catches" honestly.
+/// Posts macOS notifications when a touch event is detected, with per-kind
+/// cooldown gates so hair and face alerts do not block each other.
 @MainActor
 final class NotificationManager: ObservableObject {
     static let shared = NotificationManager()
 
-    private let identifier = "com.hairwatcher.touch"
+    @Published private(set) var todayHairCount: Int = 0
+    @Published private(set) var todayFaceCount: Int = 0
 
-    @Published private(set) var todayCount: Int = 0
-
-    private var lastFiredAt: Date?
+    private var lastFiredAtHair: Date?
+    private var lastFiredAtFace: Date?
     private var todayDate: String = NotificationManager.dayKey(for: Date())
 
     private enum Key {
-        static let count = "todayCount"
+        static let hairCount = "todayHairCount"
+        static let faceCount = "todayFaceCount"
         static let date = "todayDate"
+        static let legacyCount = "todayCount"
     }
 
     private init() {
         loadCounters()
     }
 
-    /// Asks for `.alert + .sound` permission. Returns the granted state.
     @discardableResult
     func requestAuthorization() async -> Bool {
         do {
@@ -37,63 +35,109 @@ final class NotificationManager: ObservableObject {
         }
     }
 
-    /// Records a touch event and (subject to cooldown) posts a notification.
-    func recordTouchEvent(cooldownSeconds: Int) {
+    func recordTouch(kind: TouchKind, cooldownSeconds: Int) {
         rolloverIfNeeded()
-        todayCount += 1
+        switch kind {
+        case .hair: todayHairCount += 1
+        case .face: todayFaceCount += 1
+        }
         persistCounters()
 
         let now = Date()
-        TouchHistoryStore.shared.recordEvent(at: now)
-        if let last = lastFiredAt,
+        TouchHistoryStore.shared.recordEvent(kind: kind, at: now)
+
+        let lastFired: Date?
+        switch kind {
+        case .hair: lastFired = lastFiredAtHair
+        case .face: lastFired = lastFiredAtFace
+        }
+        if let last = lastFired,
            now.timeIntervalSince(last) < TimeInterval(cooldownSeconds) {
             return
         }
-        lastFiredAt = now
+
+        switch kind {
+        case .hair: lastFiredAtHair = now
+        case .face: lastFiredAtFace = now
+        }
 
         let content = UNMutableNotificationContent()
-        content.title = "Hands off your hair"
-        content.body = todayCount == 1
-            ? "Caught you in the act."
-            : "You've done this \(todayCount) times today."
+        switch kind {
+        case .hair:
+            content.title = "Hands off your hair"
+            content.body = todayHairCount == 1
+                ? "Caught you in the act."
+                : "You've touched your hair \(todayHairCount) times today."
+        case .face:
+            content.title = "Hands off your face"
+            content.body = todayFaceCount == 1
+                ? "Caught you in the act."
+                : "You've touched your face \(todayFaceCount) times today."
+        }
         content.sound = .default
 
-        // Stable identifier means the latest notification replaces any prior
-        // pending one in Notification Center, so we never accumulate clutter.
         let request = UNNotificationRequest(
-            identifier: identifier,
+            identifier: "com.hairwatcher.touch.\(kind.rawValue)",
             content: content,
             trigger: nil
         )
         UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
     }
 
-    func resetTodayCount() {
-        todayCount = 0
+    func resetToday(kind: TouchKind) {
+        switch kind {
+        case .hair: todayHairCount = 0
+        case .face: todayFaceCount = 0
+        }
         todayDate = Self.dayKey(for: Date())
         persistCounters()
-        TouchHistoryStore.shared.clearDay(Date())
+        TouchHistoryStore.shared.clearDay(Date(), kind: kind)
+    }
+
+    func resetAllToday() {
+        todayHairCount = 0
+        todayFaceCount = 0
+        todayDate = Self.dayKey(for: Date())
+        persistCounters()
+        TouchHistoryStore.shared.clearDay(Date(), kind: .hair)
+        TouchHistoryStore.shared.clearDay(Date(), kind: .face)
+    }
+
+    /// Legacy API used when only one counter row is shown.
+    var todayCount: Int { todayHairCount + todayFaceCount }
+
+    func resetTodayCount() {
+        resetAllToday()
     }
 
     private func rolloverIfNeeded() {
         let key = Self.dayKey(for: Date())
         if key != todayDate {
             todayDate = key
-            todayCount = 0
+            todayHairCount = 0
+            todayFaceCount = 0
         }
     }
 
     private func loadCounters() {
         let defaults = UserDefaults.standard
         todayDate = defaults.string(forKey: Key.date) ?? Self.dayKey(for: Date())
-        todayCount = defaults.integer(forKey: Key.count)
+
+        if defaults.object(forKey: Key.hairCount) != nil {
+            todayHairCount = defaults.integer(forKey: Key.hairCount)
+            todayFaceCount = defaults.integer(forKey: Key.faceCount)
+        } else {
+            todayHairCount = defaults.integer(forKey: Key.legacyCount)
+            todayFaceCount = 0
+        }
         rolloverIfNeeded()
     }
 
     private func persistCounters() {
         let defaults = UserDefaults.standard
         defaults.set(todayDate, forKey: Key.date)
-        defaults.set(todayCount, forKey: Key.count)
+        defaults.set(todayHairCount, forKey: Key.hairCount)
+        defaults.set(todayFaceCount, forKey: Key.faceCount)
     }
 
     private static func dayKey(for date: Date) -> String {

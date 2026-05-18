@@ -170,10 +170,12 @@ struct MainWindowView: View {
 
     private var legend: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 16) {
-                legendItem(color: .green, label: "Hand keypoints")
-                legendItem(color: .red, label: "In hair zone")
+            HStack(spacing: 12) {
+                legendItem(color: .green, label: "Hands")
+                legendItem(color: .red, label: "Hair hit")
+                legendItem(color: .orange, label: "Face hit")
                 legendItem(color: .yellow, label: "Hair zone")
+                legendItem(color: .blue, label: "Face zone")
                 Spacer()
             }
             Toggle("Show Live Debug Preview", isOn: $settings.showLiveDebugPreview)
@@ -206,22 +208,12 @@ struct MainWindowView: View {
     private var stateText: String {
         if !settings.enabled { return "Paused" }
         if !appState.cameraAuthorized { return "No camera" }
-        switch appState.detectorState {
-        case .idle: return "Watching"
-        case .touching: return "Touching hair!"
-        case .noFace: return "No face"
-        case .disabled: return "Paused"
-        }
+        return DetectorStateDisplay.statusText(for: appState.detectorState, enabled: true)
     }
 
     private var stateColor: Color {
         if !settings.enabled || !appState.cameraAuthorized { return .gray }
-        switch appState.detectorState {
-        case .idle: return .green
-        case .touching: return .red
-        case .noFace: return .yellow
-        case .disabled: return .gray
-        }
+        return DetectorStateDisplay.color(for: appState.detectorState, enabled: true)
     }
 }
 
@@ -240,22 +232,24 @@ struct OverlayShapesView: View {
                     if let zone = frame.hairZone {
                         let r = visionRect(zone, in: size)
                         Rectangle()
-                            .strokeBorder(
-                                zoneColor(state: frame.state),
-                                style: StrokeStyle(lineWidth: 2, dash: [6, 4])
-                            )
+                            .strokeBorder(Color.yellow, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                            .frame(width: r.width, height: r.height)
+                            .position(x: r.midX, y: r.midY)
+                    }
+                    if let zone = frame.faceZone {
+                        let r = visionRect(zone, in: size)
+                        Rectangle()
+                            .strokeBorder(Color.blue, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                             .frame(width: r.width, height: r.height)
                             .position(x: r.midX, y: r.midY)
                     }
                     ForEach(Array(frame.handPoints.enumerated()), id: \.offset) { _, kp in
                         let p = visionPoint(kp.location, in: size)
+                        let hit = kp.inHairZone || kp.inFaceZone
                         Circle()
-                            .fill(kp.inZone ? Color.red : Color.green)
-                            .opacity(kp.inZone ? 0.95 : 0.75)
-                            .frame(
-                                width: kp.inZone ? 12 : 8,
-                                height: kp.inZone ? 12 : 8
-                            )
+                            .fill(keypointColor(kp))
+                            .opacity(hit ? 0.95 : 0.75)
+                            .frame(width: hit ? 12 : 8, height: hit ? 12 : 8)
                             .position(x: p.x, y: p.y)
                     }
                 }
@@ -277,12 +271,10 @@ struct OverlayShapesView: View {
         return CGRect(x: x, y: y, width: w, height: h)
     }
 
-    private func zoneColor(state: DetectorState) -> Color {
-        switch state {
-        case .touching: return .red
-        case .idle: return .yellow
-        case .noFace: return .orange
-        case .disabled: return .gray
-        }
+    private func keypointColor(_ kp: HairTouchDetector.HandKeypoint) -> Color {
+        if kp.inHairZone && kp.inFaceZone { return .red }
+        if kp.inHairZone { return .red }
+        if kp.inFaceZone { return .orange }
+        return .green
     }
 }

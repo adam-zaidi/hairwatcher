@@ -1,7 +1,6 @@
 import SwiftUI
 import AppKit
 
-/// Content of the SwiftUI popover anchored to the menu bar status item.
 struct MenuBarView: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var appState: AppState
@@ -15,7 +14,7 @@ struct MenuBarView: View {
             statusBanner
             controls
             Divider()
-            countRow
+            countRows
             Spacer(minLength: 0)
             footer
         }
@@ -58,9 +57,9 @@ struct MenuBarView: View {
     private var stateRow: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(stateColor)
+                .fill(DetectorStateDisplay.color(for: appState.detectorState, enabled: settings.enabled))
                 .frame(width: 8, height: 8)
-            Text(stateText)
+            Text(DetectorStateDisplay.statusText(for: appState.detectorState, enabled: settings.enabled))
                 .font(.callout)
             Spacer()
         }
@@ -68,8 +67,19 @@ struct MenuBarView: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Watch for").font(.callout)
+                Picker("Watch for", selection: $settings.watchTarget) {
+                    ForEach(WatchTarget.allCases) { target in
+                        Text(target.label).tag(target)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+            }
+
             Toggle(isOn: $settings.enabled) {
-                Text("Watch for hair touching")
+                Text("Enable watching")
             }
             .toggleStyle(.switch)
             .disabled(!appState.cameraAuthorized)
@@ -108,17 +118,37 @@ struct MenuBarView: View {
         }
     }
 
-    private var countRow: some View {
+    @ViewBuilder
+    private var countRows: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if settings.watchTarget.watchesHair {
+                countRow(
+                    label: "Hair today",
+                    count: notifications.todayHairCount,
+                    reset: { notifications.resetToday(kind: .hair) }
+                )
+            }
+            if settings.watchTarget.watchesFace {
+                countRow(
+                    label: "Face today",
+                    count: notifications.todayFaceCount,
+                    reset: { notifications.resetToday(kind: .face) }
+                )
+            }
+        }
+        .foregroundStyle(.secondary)
+    }
+
+    private func countRow(label: String, count: Int, reset: @escaping () -> Void) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "number.circle")
-            Text("Today: \(notifications.todayCount) catches")
+            Text("\(label): \(count) catches")
                 .font(.callout)
             Spacer()
-            Button("Reset") { notifications.resetTodayCount() }
+            Button("Reset", action: reset)
                 .buttonStyle(.borderless)
                 .font(.caption)
         }
-        .foregroundStyle(.secondary)
     }
 
     private var footer: some View {
@@ -129,33 +159,11 @@ struct MenuBarView: View {
         }
     }
 
-    // MARK: - Helpers
-
     private var sensitivityLabel: String {
         switch settings.sensitivity {
         case ..<0.4: return "Low"
         case ..<0.7: return "Medium"
         default: return "High"
-        }
-    }
-
-    private var stateText: String {
-        if !settings.enabled { return "Paused" }
-        switch appState.detectorState {
-        case .idle: return "Watching"
-        case .touching: return "You're touching your hair!"
-        case .noFace: return "Looking for your face…"
-        case .disabled: return "Paused"
-        }
-    }
-
-    private var stateColor: Color {
-        if !settings.enabled { return .gray }
-        switch appState.detectorState {
-        case .idle: return .green
-        case .touching: return .red
-        case .noFace: return .yellow
-        case .disabled: return .gray
         }
     }
 
@@ -196,5 +204,29 @@ struct MenuBarView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color.yellow.opacity(0.15))
         )
+    }
+}
+
+enum DetectorStateDisplay {
+    static func statusText(for state: DetectorState, enabled: Bool) -> String {
+        if !enabled { return "Paused" }
+        switch state {
+        case .idle: return "Watching"
+        case .touchingHair: return "Touching hair!"
+        case .touchingFace: return "Touching face!"
+        case .touchingBoth: return "Touching hair and face!"
+        case .noFace: return "Looking for your face…"
+        case .disabled: return "Paused"
+        }
+    }
+
+    static func color(for state: DetectorState, enabled: Bool) -> Color {
+        if !enabled { return .gray }
+        switch state {
+        case .idle: return .green
+        case .touchingHair, .touchingFace, .touchingBoth: return .red
+        case .noFace: return .yellow
+        case .disabled: return .gray
+        }
     }
 }

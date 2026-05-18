@@ -2,10 +2,6 @@ import Foundation
 import Combine
 
 /// User-tunable preferences, persisted via `UserDefaults`.
-///
-/// We avoid `@AppStorage` here because we need this object to live outside a SwiftUI
-/// view (the AppDelegate observes it). Plain `@Published` + a `didSet` write-through
-/// keeps SwiftUI bindings working while still surviving relaunches.
 @MainActor
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -16,6 +12,7 @@ final class AppSettings: ObservableObject {
         static let cooldownSeconds = "cooldownSeconds"
         static let launchAtLogin = "launchAtLogin"
         static let showLiveDebugPreview = "showLiveDebugPreview"
+        static let watchTarget = "watchTarget"
     }
 
     @Published var enabled: Bool {
@@ -33,6 +30,9 @@ final class AppSettings: ObservableObject {
     @Published var showLiveDebugPreview: Bool {
         didSet { UserDefaults.standard.set(showLiveDebugPreview, forKey: Key.showLiveDebugPreview) }
     }
+    @Published var watchTarget: WatchTarget {
+        didSet { UserDefaults.standard.set(watchTarget.rawValue, forKey: Key.watchTarget) }
+    }
 
     private init() {
         let defaults = UserDefaults.standard
@@ -42,18 +42,18 @@ final class AppSettings: ObservableObject {
             Key.cooldownSeconds: 30,
             Key.launchAtLogin: false,
             Key.showLiveDebugPreview: false,
+            Key.watchTarget: WatchTarget.both.rawValue,
         ])
         self.enabled = defaults.bool(forKey: Key.enabled)
         self.sensitivity = defaults.double(forKey: Key.sensitivity)
         self.cooldownSeconds = defaults.integer(forKey: Key.cooldownSeconds)
         self.launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
         self.showLiveDebugPreview = defaults.bool(forKey: Key.showLiveDebugPreview)
+        let targetRaw = defaults.string(forKey: Key.watchTarget) ?? WatchTarget.both.rawValue
+        self.watchTarget = WatchTarget(rawValue: targetRaw) ?? .both
     }
 }
 
-/// Live, non-persistent app state surfaced to the UI. Holds references to the
-/// long-lived camera + detector so that SwiftUI views (e.g. the debug preview)
-/// can reach the same instances the AppDelegate is wiring up.
 @MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()

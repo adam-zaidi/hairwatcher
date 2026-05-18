@@ -1,16 +1,17 @@
 import Foundation
 
-/// One calendar day's touch statistics.
 struct DaySummary: Identifiable, Equatable {
     let id: String
     let date: Date
     let count: Int
-    /// True when some catches on this day predate timestamp logging (legacy counter only).
     let hasUntimestampedCatches: Bool
 }
 
-/// Persists hair-touch event timestamps locally for statistics.
-/// Camera frames are never stored — only `Date` metadata.
+private struct TouchRecord: Codable, Equatable {
+    let t: TimeInterval
+    let k: String
+}
+
 @MainActor
 final class TouchHistoryStore: ObservableObject {
     static let shared = TouchHistoryStore()
@@ -19,11 +20,12 @@ final class TouchHistoryStore: ObservableObject {
 
     private enum Key {
         static let timestamps = "touchEventTimestamps"
+        static let records = "touchEventRecords"
     }
 
     @Published private(set) var revision = 0
 
-    private var timestamps: [TimeInterval] = []
+    private var records: [TouchRecord] = []
     private let calendar = Calendar.current
 
     private init() {
@@ -31,51 +33,47 @@ final class TouchHistoryStore: ObservableObject {
         pruneOldEntries()
     }
 
-    // MARK: - Recording
-
-    func recordEvent(at date: Date = Date()) {
-        timestamps.append(date.timeIntervalSince1970)
+    func recordEvent(kind: TouchKind, at date: Date = Date()) {
+        records.append(TouchRecord(t: date.timeIntervalSince1970, k: kind.rawValue))
         pruneOldEntries()
         persist()
         revision += 1
     }
 
-    func clearDay(_ day: Date) {
+    func clearDay(_ day: Date, kind: TouchKind) {
         let key = Self.dayKey(for: day, calendar: calendar)
-        timestamps.removeAll { interval in
-            Self.dayKey(for: Date(timeIntervalSince1970: interval), calendar: calendar) == key
+        records.removeAll { record in
+            record.k == kind.rawValue
+                && Self.dayKey(for: Date(timeIntervalSince1970: record.t), calendar: calendar) == key
         }
         persist()
         revision += 1
     }
 
-    // MARK: - Queries
-
-    func daySummaries() -> [DaySummary] {
-        var grouped: [String: [TimeInterval]] = [:]
-        for interval in timestamps {
-            let key = Self.dayKey(for: Date(timeIntervalSince1970: interval), calendar: calendar)
-            grouped[key, default: []].append(interval)
+    func daySummaries(kind: TouchKind) -> [DaySummary] {
+        var grouped: [String: [TouchRecord]] = [:]
+        for record in records where record.k == kind.rawValue {
+            let key = Self.dayKey(for: Date(timeIntervalSince1970: record.t), calendar: calendar)
+            grouped[key, default: []].append(record)
         }
 
-        var summaries: [DaySummary] = grouped.map { key, intervals in
+        var summaries: [DaySummary] = grouped.map { key, dayRecords in
             let date = Self.startOfDay(forKey: key, calendar: calendar) ?? Date()
-            let count = displayCount(dayKey: key, timestampCount: intervals.count)
-            let hasUntimestamped = count > intervals.count
+            let count = displayCount(kind: kind, dayKey: key, timestampCount: dayRecords.count)
             return DaySummary(
-                id: key,
+                id: "\(kind.rawValue)-\(key)",
                 date: date,
                 count: count,
-                hasUntimestampedCatches: hasUntimestamped
+                hasUntimestampedCatches: count > dayRecords.count
             )
         }
 
         let todayKey = Self.dayKey(for: Date(), calendar: calendar)
-        if summaries.first(where: { $0.id == todayKey }) == nil {
-            let legacy = legacyOrphanCount(forDayKey: todayKey)
+        if summaries.first(where: { $0.id == "\(kind.rawValue)-\(todayKey)" }) == nil {
+            let legacy = legacyOrphanCount(kind: kind, forDayKey: todayKey)
             if legacy > 0 {
                 summaries.append(DaySummary(
-                    id: todayKey,
+                    id: "\(kind.rawValue)-\(todayKey)",
                     date: calendar.startOfDay(for: Date()) ?? Date(),
                     count: legacy,
                     hasUntimestampedCatches: true
@@ -86,17 +84,20 @@ final class TouchHistoryStore: ObservableObject {
         return summaries.sorted { $0.date > $1.date }
     }
 
-    func events(on day: Date) -> [Date] {
+    func events(on day: Date, kind: TouchKind) -> [Date] {
         let key = Self.dayKey(for: day, calendar: calendar)
-        return timestamps
-            .filter { Self.dayKey(for: Date(timeIntervalSince1970: $0), calendar: calendar) == key }
-            .map { Date(timeIntervalSince1970: $0) }
+        return records
+            .filter { record in
+                record.k == kind.rawValue
+                    && Self.dayKey(for: Date(timeIntervalSince1970: record.t), calendar: calendar) == key
+            }
+            .map { Date(timeIntervalSince1970: $0.t) }
             .sorted()
     }
 
-    func hourlyBuckets(on day: Date) -> [Int] {
+    func hourlyBuckets(on day: Date, kind: TouchKind) -> [Int] {
         var buckets = Array(repeating: 0, count: 24)
-        for event in events(on: day) {
+        for event in events(on: day, kind: kind) {
             let hour = calendar.component(.hour, from: event)
             if hour >= 0, hour < 24 {
                 buckets[hour] += 1
@@ -105,35 +106,44 @@ final class TouchHistoryStore: ObservableObject {
         return buckets
     }
 
-    func count(on day: Date) -> Int {
+    func count(on day: Date, kind: TouchKind) -> Int {
         let key = Self.dayKey(for: day, calendar: calendar)
-        return displayCount(dayKey: key, timestampCount: events(on: day).count)
+        return displayCount(
+            kind: kind,
+            dayKey: key,
+            timestampCount: events(on: day, kind: kind).count
+        )
     }
 
-    func totalCount(inLastDays days: Int) -> Int {
+    func totalCount(inLastDays days: Int, kind: TouchKind) -> Int {
         guard days > 0 else { return 0 }
         let start = calendar.date(byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: Date()))!
-        return daySummaries()
+        return daySummaries(kind: kind)
             .filter { $0.date >= start }
             .reduce(0) { $0 + $1.count }
     }
 
-    var isEmpty: Bool {
-        daySummaries().isEmpty
+    func isEmpty(kind: TouchKind) -> Bool {
+        daySummaries(kind: kind).isEmpty
     }
 
-    // MARK: - Persistence
-
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: Key.timestamps) else { return }
-        if let decoded = try? JSONDecoder().decode([TimeInterval].self, from: data) {
-            timestamps = decoded
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: Key.records),
+           let decoded = try? JSONDecoder().decode([TouchRecord].self, from: data) {
+            records = decoded
+            return
+        }
+        if let data = defaults.data(forKey: Key.timestamps),
+           let legacy = try? JSONDecoder().decode([TimeInterval].self, from: data) {
+            records = legacy.map { TouchRecord(t: $0, k: TouchKind.hair.rawValue) }
+            persist()
         }
     }
 
     private func persist() {
-        if let data = try? JSONEncoder().encode(timestamps) {
-            UserDefaults.standard.set(data, forKey: Key.timestamps)
+        if let data = try? JSONEncoder().encode(records) {
+            UserDefaults.standard.set(data, forKey: Key.records)
         }
     }
 
@@ -144,25 +154,26 @@ final class TouchHistoryStore: ObservableObject {
             to: calendar.startOfDay(for: Date())
         ) else { return }
         let cutoffInterval = cutoff.timeIntervalSince1970
-        let before = timestamps.count
-        timestamps.removeAll { $0 < cutoffInterval }
-        if timestamps.count != before {
+        let before = records.count
+        records.removeAll { $0.t < cutoffInterval }
+        if records.count != before {
             persist()
         }
     }
 
-    private func displayCount(dayKey: String, timestampCount: Int) -> Int {
-        max(timestampCount, legacyOrphanCount(forDayKey: dayKey))
+    private func displayCount(kind: TouchKind, dayKey: String, timestampCount: Int) -> Int {
+        max(timestampCount, legacyOrphanCount(kind: kind, forDayKey: dayKey))
     }
 
-    /// Catches recorded before timestamp logging existed (today only, via NotificationManager).
-    private func legacyOrphanCount(forDayKey dayKey: String) -> Int {
+    private func legacyOrphanCount(kind: TouchKind, forDayKey dayKey: String) -> Int {
+        guard kind == .hair else { return 0 }
         let todayKey = Self.dayKey(for: Date(), calendar: calendar)
         guard dayKey == todayKey else { return 0 }
-        let recorded = timestamps.filter {
-            Self.dayKey(for: Date(timeIntervalSince1970: $0), calendar: calendar) == todayKey
+        let recorded = records.filter {
+            $0.k == TouchKind.hair.rawValue
+                && Self.dayKey(for: Date(timeIntervalSince1970: $0.t), calendar: calendar) == todayKey
         }.count
-        let legacy = NotificationManager.shared.todayCount
+        let legacy = NotificationManager.shared.todayHairCount
         return max(0, legacy - recorded)
     }
 
