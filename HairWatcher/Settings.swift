@@ -13,6 +13,8 @@ final class AppSettings: ObservableObject {
         static let launchAtLogin = "launchAtLogin"
         static let showLiveDebugPreview = "showLiveDebugPreview"
         static let watchTarget = "watchTarget"
+        static let annoyingMode = "annoyingMode"
+        static let annoyingDurationSeconds = "annoyingDurationSeconds"
     }
 
     @Published var enabled: Bool {
@@ -33,6 +35,12 @@ final class AppSettings: ObservableObject {
     @Published var watchTarget: WatchTarget {
         didSet { UserDefaults.standard.set(watchTarget.rawValue, forKey: Key.watchTarget) }
     }
+    @Published var annoyingMode: Bool {
+        didSet { UserDefaults.standard.set(annoyingMode, forKey: Key.annoyingMode) }
+    }
+    @Published var annoyingDurationSeconds: Int {
+        didSet { UserDefaults.standard.set(annoyingDurationSeconds, forKey: Key.annoyingDurationSeconds) }
+    }
 
     private init() {
         let defaults = UserDefaults.standard
@@ -43,6 +51,8 @@ final class AppSettings: ObservableObject {
             Key.launchAtLogin: false,
             Key.showLiveDebugPreview: false,
             Key.watchTarget: WatchTarget.both.rawValue,
+            Key.annoyingMode: false,
+            Key.annoyingDurationSeconds: 5,
         ])
         self.enabled = defaults.bool(forKey: Key.enabled)
         self.sensitivity = defaults.double(forKey: Key.sensitivity)
@@ -51,6 +61,8 @@ final class AppSettings: ObservableObject {
         self.showLiveDebugPreview = defaults.bool(forKey: Key.showLiveDebugPreview)
         let targetRaw = defaults.string(forKey: Key.watchTarget) ?? WatchTarget.both.rawValue
         self.watchTarget = WatchTarget(rawValue: targetRaw) ?? .both
+        self.annoyingMode = defaults.bool(forKey: Key.annoyingMode)
+        self.annoyingDurationSeconds = defaults.integer(forKey: Key.annoyingDurationSeconds)
     }
 }
 

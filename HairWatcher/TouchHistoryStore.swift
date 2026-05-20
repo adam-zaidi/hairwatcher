@@ -74,7 +74,7 @@ final class TouchHistoryStore: ObservableObject {
             if legacy > 0 {
                 summaries.append(DaySummary(
                     id: "\(kind.rawValue)-\(todayKey)",
-                    date: calendar.startOfDay(for: Date()) ?? Date(),
+                    date: calendar.startOfDay(for: Date()),
                     count: legacy,
                     hasUntimestampedCatches: true
                 ))

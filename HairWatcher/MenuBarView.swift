@@ -111,6 +111,39 @@ struct MenuBarView: View {
             }
             .toggleStyle(.switch)
 
+            VStack(alignment: .leading, spacing: 4) {
+                Toggle(isOn: $settings.annoyingMode) {
+                    Text("Annoying mode")
+                }
+                .toggleStyle(.switch)
+                Text("Full-screen lock on every display when you get caught.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if settings.annoyingMode {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("Lock duration").font(.callout)
+                            Spacer()
+                            Text("\(settings.annoyingDurationSeconds)s")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        Slider(
+                            value: Binding(
+                                get: { Double(settings.annoyingDurationSeconds) },
+                                set: { settings.annoyingDurationSeconds = Int($0.rounded()) }
+                            ),
+                            in: 2 ... 30,
+                            step: 1
+                        )
+                    }
+                    .padding(.leading, 4)
+                }
+            }
+
             Text(PrivacyPolicy.localProcessingNotice)
                 .font(.caption)
                 .foregroundStyle(.secondary)

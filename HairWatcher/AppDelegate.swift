@@ -61,13 +61,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         detector.onHairTouchEvent = { [weak self] in
             guard let self else { return }
-            OverlayAlertManager.shared.show(message: "Stop touching your hair!")
+            OverlayAlertManager.shared.show(
+                message: "Stop touching your hair!",
+                annoying: self.settings.annoyingMode,
+                annoyingDuration: TimeInterval(self.settings.annoyingDurationSeconds)
+            )
             self.notifications.recordTouch(kind: .hair, cooldownSeconds: self.settings.cooldownSeconds)
         }
 
         detector.onFaceTouchEvent = { [weak self] in
             guard let self else { return }
-            OverlayAlertManager.shared.show(message: "Stop touching your face!")
+            OverlayAlertManager.shared.show(
+                message: "Stop touching your face!",
+                annoying: self.settings.annoyingMode,
+                annoyingDuration: TimeInterval(self.settings.annoyingDurationSeconds)
+            )
             self.notifications.recordTouch(kind: .face, cooldownSeconds: self.settings.cooldownSeconds)
         }
 

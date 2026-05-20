@@ -77,6 +77,9 @@ debug view.
 - **Cooldown** — minimum seconds between notifications. Detection events are
   still counted during cooldown; you just don't get spammed.
 - **Launch at login** — wired via `SMAppService.mainApp`.
+- **Annoying mode** — when on, the on-screen warning covers every display and
+  blocks mouse and keyboard input for a configurable duration (2–30s slider;
+  default 5s). Normal mode shows a small banner for ~2s without blocking.
 - **Show Live Debug Preview** — opt-in only. Detection works with the preview
   hidden; when shown, the feed is display-only and is not recorded or uploaded.
 
